@@ -1,0 +1,12 @@
+node_modules/
+dist/
+screenshots/
+.vite/
+.tmp-chrome/
+*.local
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+!.env.example
