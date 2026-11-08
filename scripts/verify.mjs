@@ -179,13 +179,18 @@ async function browserTests() {
   if (!chrome) { note('找到可用浏览器', false, '跳过浏览器测试'); return; }
 
   const { server, port } = await startStaticServer();
-  const url = `http://127.0.0.1:${port}/life-wishlist/`;
+  const localUrl = `http://127.0.0.1:${port}/life-wishlist/`;
+  // LW_URL 可指向已部署的 HTTPS 站点，对线上版本跑同一套验收
+  const url = process.env.LW_URL || localUrl;
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'lw-chrome-'));
-  const proc = spawn(chrome, [
+  const chromeArgs = [
     '--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run', '--no-default-browser-check',
     '--disable-background-networking', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
-    '--window-size=390,844', url,
-  ], { stdio: 'ignore' });
+    '--window-size=390,844',
+  ];
+  if (process.env.LW_URL && process.env.HTTPS_PROXY) chromeArgs.push(`--proxy-server=${process.env.HTTPS_PROXY}`);
+  chromeArgs.push(url);
+  const proc = spawn(chrome, chromeArgs, { stdio: 'ignore' });
 
   let ws = null;
   try {
@@ -366,8 +371,15 @@ async function browserTests() {
 
     // Service Worker 注册 + 离线重载
     await ev(`document.querySelectorAll('.tab')[0].click()`);
-    const swReady = await waitFor(`navigator.serviceWorker.controller !== null`, 12000);
-    note('Service Worker 已注册并接管页面', swReady);
+    let swReady = await waitFor(`navigator.serviceWorker.controller !== null`, 9000);
+    if (!swReady) {
+      // 首次安装时部分浏览器需要一次刷新才把页面交给 SW 接管，这是标准行为
+      await send('Page.reload');
+      swReady = await waitFor(`navigator.serviceWorker.controller !== null`, 10000);
+    }
+    const swCache = await ev(`(async()=>{const ks=await caches.keys();const c=await caches.open(ks.find(k=>k.startsWith('life-wishlist'))||ks[0]);return (await c.keys()).length})()`).catch(() => 0);
+    note('Service Worker 已注册并接管页面、已预缓存资源', swReady && swCache >= 6,
+      `controller=${swReady} cached=${swCache}`);
     await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
     await send('Page.reload').catch(() => undefined);
     const offlineOK = await waitFor(`document.querySelector('.page-head h1')?.textContent === '我的人生清单'`, 12000);

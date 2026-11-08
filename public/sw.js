@@ -9,7 +9,7 @@
  *
  * 注意：所有请求都限定同源；本应用不向任何第三方发起请求。
  */
-const CACHE_NAME = 'life-wishlist-shell-v1';
+const CACHE_NAME = 'life-wishlist-shell-v2';
 const SCOPE = self.registration.scope; // 以 / 结尾，例如 https://xxx.github.io/life-wishlist/
 const abs = (p) => new URL(p, SCOPE).href;
 
@@ -48,9 +48,12 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k !== CACHE_NAME && k.startsWith('life-wishlist')).map((k) => caches.delete(k)));
+      // 先接管页面：即使后面的缓存清理抛错，也不会影响离线能力
       await self.clients.claim();
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.filter((k) => k !== CACHE_NAME && k.startsWith('life-wishlist')).map((k) => caches.delete(k)));
+      } catch (_) { /* 忽略清理失败 */ }
     })()
   );
 });
